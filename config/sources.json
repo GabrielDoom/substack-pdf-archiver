@@ -1,0 +1,29 @@
+{
+  "sources": [
+    {
+      "id": "rian-stone",
+      "name": "Rian Stone",
+      "gmail_match": [
+        "rian stone",
+        "rian's substack",
+        "rian’s substack"
+      ]
+    },
+    {
+      "id": "corporate-machiavelli",
+      "name": "Corporate Machiavelli",
+      "gmail_match": [
+        "machiavelli bot",
+        "corporate machiavelli"
+      ]
+    },
+    {
+      "id": "nathan-baugh",
+      "name": "Nathan Baugh / Worldbuilders",
+      "gmail_match": [
+        "nathan baugh",
+        "worldbuilders"
+      ]
+    }
+  ]
+}
