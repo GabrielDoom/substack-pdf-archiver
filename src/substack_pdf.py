@@ -36,6 +36,12 @@ FIREFOX_PROFILE = Path(
     "/home/gabriel/.mozilla/firefox/abymjwfg.substack"
 )
 
+class PermanentResolutionError(Exception):
+    """
+    Indicates that the article cannot be resolved automatically
+    with the current Substack workflow.
+    """
+
 PAGE_TIMEOUT = 15
 MENU_TIMEOUT = 10
 PDF_OPTION_TIMEOUT = 5
@@ -100,6 +106,116 @@ def save_json(path, data):
             ensure_ascii=False,
             indent=2
         )
+
+
+def parse_selection(selection, total):
+    """
+    Parses article numbers selected by the user.
+
+    Accepted formats:
+        all
+        none
+        1,3,5
+        2-6
+    """
+
+    selection = selection.strip().lower()
+
+    if selection == "all":
+        return set(range(total))
+
+    if selection in ("", "none"):
+        return set()
+
+    selected = set()
+
+    for part in selection.split(","):
+        part = part.strip()
+
+        if "-" in part:
+            start_text, end_text = part.split("-", 1)
+
+            start = int(start_text)
+            end = int(end_text)
+
+            for number in range(start, end + 1):
+                if 1 <= number <= total:
+                    selected.add(number - 1)
+
+        else:
+            number = int(part)
+
+            if 1 <= number <= total:
+                selected.add(number - 1)
+
+    return selected
+
+def select_approved_articles(articles):
+    """
+    Lets the user choose which approved articles should be
+    resolved during this execution.
+    """
+
+    approved = [
+        article
+        for article in articles
+        if article.get("status") == "approved"
+    ]
+
+    print(
+        f"[INFO] PDFs awaiting resolution: "
+        f"{len(approved)}"
+    )
+
+    if not approved:
+        return []
+
+    print()
+    print("=== APPROVED ARTICLES ===")
+    print()
+
+    for index, article in enumerate(
+        approved,
+        start=1
+    ):
+        print(
+            f"[{index}] "
+            f"{article['source']}"
+        )
+        print(
+            f"    {article['title']}"
+        )
+        print()
+
+    print(
+        "Select articles to resolve."
+    )
+    print(
+        "Examples: all | none | 1,3,5 | 2-6"
+    )
+
+    while True:
+        try:
+            selection = input(
+                "Resolve: "
+            )
+
+            indexes = parse_selection(
+                selection,
+                len(approved)
+            )
+
+            break
+
+        except ValueError:
+            print(
+                "Invalid selection. Try again."
+            )
+
+    return [
+        approved[index]
+        for index in sorted(indexes)
+    ]
 
 
 def ask_headless_mode():
@@ -194,6 +310,18 @@ def load_article(driver, url):
         )
     )
 
+    current_url = driver.current_url
+
+    print(
+        f"[DEBUG] Loaded URL: "
+        f"{current_url}"
+    )
+
+    if "/p/" not in current_url:
+        raise PermanentResolutionError(
+            "Substack redirected away from "
+            f"the article page: {current_url}"
+        )
 
 def find_more_menu(driver):
     """
@@ -462,10 +590,46 @@ def upsert_result(results, article):
 
     results.append(article)
 
+def reset_browser_state(driver):
+    """
+    Restores Firefox to a clean single-tab state.
+
+    This is used after a failed PDF resolution so the next article
+    does not inherit a broken navigation state.
+    """
+
+    try:
+        handles = driver.window_handles
+
+        if not handles:
+            return
+
+        primary_handle = handles[0]
+
+        for handle in handles[1:]:
+            try:
+                driver.switch_to.window(
+                    handle
+                )
+                driver.close()
+            except Exception:
+                pass
+
+        driver.switch_to.window(
+            primary_handle
+        )
+
+        driver.get(
+            "about:blank"
+        )
+
+    except Exception:
+        pass
 
 def process_articles(
     driver,
     articles,
+    selected_articles,
     existing_results
 ):
     """
@@ -482,6 +646,8 @@ def process_articles(
 
     results = existing_results.copy()
 
+    resolved_count = 0
+
     already_resolved = {
         item.get("post_url")
         for item in results
@@ -492,28 +658,23 @@ def process_articles(
         }
     }
 
-    eligible_articles = [
-        article
-        for article in articles
-        if article.get("status")
-        == "approved"
-    ]
-
     print(
-        f"[INFO] Approved articles: "
-        f"{len(eligible_articles)}"
+        f"[INFO] Articles selected: "
+        f"{len(selected_articles)}"
     )
 
-    for article in eligible_articles:
+
+    for article in selected_articles:
+
+        reset_browser_state(
+            driver
+        )
 
         post_url = article.get(
             "post_url"
         )
 
-        # Caso 1:
-        # O PDF já foi resolvido em execução anterior.
         if post_url in already_resolved:
-
             article["status"] = "pdf_resolved"
 
             save_json(
@@ -528,8 +689,6 @@ def process_articles(
 
             continue
 
-        # Caso 2:
-        # Ainda precisamos resolver o PDF.
         try:
             resolved = resolve_pdf(
                 driver,
@@ -541,13 +700,11 @@ def process_articles(
                 resolved
             )
 
-            # Salva os dados específicos do PDF.
             save_json(
                 PDF_URLS_FILE,
                 results
             )
 
-            # Atualiza também o estado no articles.json.
             article["status"] = "pdf_resolved"
 
             save_json(
@@ -559,18 +716,45 @@ def process_articles(
                 post_url
             )
 
+            resolved_count += 1
+
             print(
                 "[OK] PDF resolved:"
             )
-
             print(
                 f"     {resolved['pdf_url']}"
             )
 
         except Exception as error:
-            print(
-                "[ERROR] Could not resolve:"
+
+            error_message = str(error)
+
+            permanent_error = (
+                isinstance(
+                    error,
+                    PermanentResolutionError
+                )
+                or
+                "networkProtocolError"
+                in error_message
             )
+
+            if permanent_error:
+                article["status"] = "unresolved"
+
+                save_json(
+                    ARTICLES_FILE,
+                    articles
+                )
+
+                print(
+                    "[UNRESOLVED] Could not resolve automatically:"
+                )
+
+            else:
+                print(
+                    "[ERROR] Could not resolve:"
+                )
 
             print(
                 f"        {post_url}"
@@ -580,10 +764,17 @@ def process_articles(
                 f"        {error}"
             )
 
-    return results
+            reset_browser_state(
+                driver
+            )
+
+    return results, resolved_count
 
 
-def run_resolution(headless=True):
+def run_resolution(
+    headless=True,
+    selected_articles=None
+    ):
     """
     Runs the PDF resolution stage.
 
@@ -602,27 +793,45 @@ def run_resolution(headless=True):
         print(
             "[INFO] No articles found."
         )
-        return
+        return 0
+
+    if selected_articles is None:
+        selected_articles = (
+            select_approved_articles(
+                articles
+            )
+        )
+
+
+    if not selected_articles:
+            print(
+                "[INFO] No articles selected. "
+                "PDF resolution cancelled."
+            )
+            return 0
 
     existing_results = load_json(
         PDF_URLS_FILE,
         default=[]
     )
 
-    print(
-        f"[INFO] Articles loaded: "
-        f"{len(articles)}"
-    )
+    # print(
+    #     f"[INFO] Articles loaded: "
+    #     f"{len(articles)}"
+    # )
 
     driver = create_driver(
         headless=headless
     )
 
     try:
-        process_articles(
-            driver,
-            articles,
-            existing_results
+        results, resolved_count = (
+            process_articles(
+                driver,
+                articles,
+                selected_articles,
+                existing_results
+            )
         )
 
     finally:
@@ -632,14 +841,38 @@ def run_resolution(headless=True):
         "[OK] PDF resolution stage finished."
     )
 
+    return resolved_count
+
 def main():
-    
+    articles = load_json(
+        ARTICLES_FILE,
+        default=[]
+    )
+
+    if not articles:
+        print(
+            "[INFO] No articles found."
+        )
+        return
+
+    selected_articles = (
+        select_approved_articles(
+            articles
+        )
+    )
+
+    if not selected_articles:
+        print(
+            "[INFO] No articles selected."
+        )
+        return
+
     headless = ask_headless_mode()
 
     run_resolution(
-        headless=headless
+        headless=headless,
+        selected_articles=selected_articles
     )
-
 
 
 if __name__ == "__main__":

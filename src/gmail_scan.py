@@ -7,11 +7,12 @@ import warnings
 
 from collections import Counter
 from contextlib import redirect_stdout
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
+import argparse
 
 
 """
@@ -92,11 +93,83 @@ ARTICLES_FILE = (
     / "articles.json"
 )
 
+SCAN_STATE_FILE = (
+    PROJECT_ROOT
+    / "data"
+    / "scan_state.json"
+)
+
 
 SCOPES = [
     "https://www.googleapis.com/auth/gmail.readonly"
 ]
 
+# Scheduling
+
+def get_scan_cutoff():
+    """
+    Determines how far back the scheduled scanner should search.
+
+    The scanner always covers at least the previous 24 hours.
+    If the previous successful scan happened earlier than that,
+    scanning resumes from that timestamp.
+    """
+
+    now = datetime.now(
+        timezone.utc
+    )
+
+    minimum_cutoff = (
+        now - timedelta(hours=24)
+    )
+
+    state = load_json(
+        SCAN_STATE_FILE,
+        default={}
+    )
+
+    last_scan_text = state.get(
+        "last_successful_scan"
+    )
+
+    if not last_scan_text:
+        return minimum_cutoff
+
+    try:
+        last_scan = datetime.fromisoformat(
+            last_scan_text
+        )
+
+    except ValueError:
+        return minimum_cutoff
+
+    if last_scan.tzinfo is None:
+        last_scan = last_scan.replace(
+            tzinfo=timezone.utc
+        )
+
+    return min(
+        minimum_cutoff,
+        last_scan
+    )
+
+def build_scheduled_query(cutoff):
+    """
+    Builds a coarse Gmail-side filter.
+
+    Exact timestamp filtering is performed afterwards using
+    Gmail's internalDate.
+    """
+
+    date_text = cutoff.strftime(
+        "%Y/%m/%d"
+    )
+
+    return (
+        f"in:inbox "
+        f"from:substack.com "
+        f"after:{date_text}"
+    )
 
 # Initial backlog scan.
 #
@@ -200,6 +273,23 @@ def save_json(path, data):
             ensure_ascii=False,
             indent=2
         )
+
+def save_scan_state():
+    """
+    Records the completion time of a successful scheduled scan.
+    """
+
+    now = datetime.now(
+        timezone.utc
+    )
+
+    save_json(
+        SCAN_STATE_FILE,
+        {
+            "last_successful_scan":
+                now.isoformat()
+        }
+    )
 
 
 # ---------------------------------------------------------
@@ -405,6 +495,29 @@ def get_message(service, message_id):
         )
         .execute()
     )
+
+def message_is_after_cutoff(
+    message,
+    cutoff
+):
+    """
+    Checks Gmail's internal timestamp against the scheduled
+    scan cutoff.
+    """
+
+    internal_date = message.get(
+        "internalDate"
+    )
+
+    if not internal_date:
+        return True
+
+    message_time = datetime.fromtimestamp(
+        int(internal_date) / 1000,
+        tz=timezone.utc
+    )
+
+    return message_time >= cutoff
 
 
 # ---------------------------------------------------------
@@ -961,7 +1074,12 @@ def merge_articles(
 # Main scanning operation
 # ---------------------------------------------------------
 
-def scan_gmail(service, sources):
+def scan_gmail(
+    service, 
+    sources,
+    query,
+    cutoff=None
+    ):
     """
     Executes the Gmail discovery stage.
 
@@ -974,7 +1092,7 @@ def scan_gmail(service, sources):
 
     message_ids = search_messages(
         service,
-        GMAIL_QUERY
+        query
     )
 
     log_info(
@@ -999,6 +1117,15 @@ def scan_gmail(service, sources):
                 service,
                 message_id
             )
+
+            if (
+                cutoff is not None
+                and not message_is_after_cutoff(
+                    message,
+                    cutoff
+                )
+            ):
+                continue
 
             source = detect_source(
                 message,
@@ -1135,9 +1262,16 @@ def article_identity(article):
     )
 
 
-def run_scan():
+def run_scan(scheduled=False):
     """
     Runs the Gmail discovery stage.
+
+    Parameters
+    ----------
+    scheduled : bool
+        If True, runs an incremental scan using the previous
+        successful scan timestamp as a lower bound, while always
+        covering at least the last 24 hours.
 
     Returns
     -------
@@ -1161,15 +1295,40 @@ def run_scan():
         if article_identity(article)
     }
 
-    log_info(
-        "Gmail scan started."
-    )
-
     service = authenticate_gmail()
+
+    if scheduled:
+
+        cutoff = get_scan_cutoff()
+
+        query = build_scheduled_query(
+            cutoff
+        )
+
+        log_info(
+            "Scheduled Gmail scan started."
+        )
+
+        log_info(
+            f"Scanning from: "
+            f"{cutoff.isoformat()}"
+        )
+
+    else:
+
+        cutoff = None
+
+        query = GMAIL_QUERY
+
+        log_info(
+            "Gmail scan started."
+        )
 
     discovered = scan_gmail(
         service,
-        sources
+        sources,
+        query=query,
+        cutoff=cutoff
     )
 
     newly_discovered = [
@@ -1189,6 +1348,9 @@ def run_scan():
         merged
     )
 
+    if scheduled:
+        save_scan_state()
+
     print()
 
     log_ok(
@@ -1206,8 +1368,38 @@ def run_scan():
     )
 
 def main():
-    
-    run_scan()
+    """
+    Command-line entry point.
+
+    Default:
+        full/manual scan
+
+    --scheduled:
+        incremental scan covering at least the last 24 hours,
+        or since the previous successful scheduled scan if older.
+    """
+
+    parser = argparse.ArgumentParser(
+        description=(
+            "Scan Gmail for configured Substack newsletters."
+        )
+    )
+
+    parser.add_argument(
+        "--scheduled",
+        action="store_true",
+        help=(
+            "Run an incremental scheduled scan using "
+            "scan_state.json."
+        )
+    )
+
+    args = parser.parse_args()
+
+    run_scan(
+        scheduled=args.scheduled
+    )
+
 
 if __name__ == "__main__":
     main()

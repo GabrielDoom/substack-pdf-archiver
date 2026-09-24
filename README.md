@@ -141,18 +141,18 @@ The goal is not to mirror an entire Substack inbox.
 
 The application selectively preserves articles from chosen authors using Substack's own PDF representation while keeping discovery, browser automation, and file download as independent components.
 
-Fase 1 — Execução manual
+Phase 1 — Manual Execution
 python gmail_scan.py
 python substack_pdf.py
 python download_pdfs.py
 
-Fase 2 — Aprovação seletiva
+Phase 2 — Selective Approval
 gmail_scan.py
 → relatório
 → usuário escolhe artigos
 → restante do pipeline
 
-Fase 3 — Scanner diário
+Phase 3 — Scanner 
 systemd timer / cron
 → gmail_scan.py
 → notificação se houver novidades
@@ -189,3 +189,60 @@ deactivate
 Current development environment uses Python 3.8.
 Google API libraries already warn that this version is unsupported.
 Upgrade to Python >= 3.10 before treating the application as stable.
+
+## Article states
+
+The pipeline uses explicit states to preserve progress between runs:
+
+- `discovered` — found by the Gmail scanner and awaiting human review.
+- `approved` — approved for Substack PDF resolution.
+- `pdf_resolved` — Substack PDF endpoint was successfully resolved.
+- `unresolved` — automatic resolution failed because the Substack article
+  redirects away from the post page or the PDF endpoint produces a permanent
+  browser/network protocol failure.
+- `downloaded` — PDF was successfully saved locally in the PDF manifest.
+
+Transient Selenium failures do not automatically mark an article as
+`unresolved`; the article remains `approved` so it can be retried later.
+
+## Substack limitations
+
+PDF resolution depends on Substack's current web interface and network behavior.
+
+The resolver uses an authenticated Firefox profile to open the article menu
+and obtain the public `/api/v1/post/pdf` endpoint. This workflow has proven
+reliable for the large majority of tested posts, but it is not guaranteed for
+every historical article.
+
+Known limitations include:
+
+- old Substack URLs may redirect to the publication homepage instead of the
+  original post;
+- some PDF endpoints may return Firefox network protocol errors;
+- Substack may temporarily rate-limit PDF requests with HTTP 429 responses;
+- dynamic page rendering may occasionally cause transient Selenium errors.
+
+The application preserves state across runs. Transient failures can therefore
+be retried without rescanning Gmail or repeating successfully completed work.
+
+Articles that consistently redirect away from the post or fail at the PDF
+endpoint can be marked `unresolved` and excluded from future automatic runs.
+
+## Running individual stages
+
+The complete interactive workflow:
+
+```bash
+python src/sync_scan.py
+```
+
+Individual stages can also be executed independently:
+
+```bash
+python src/gmail_scan.py
+python src/substack_pdf.py
+python src/download_pdfs.py
+```
+
+This allows Gmail discovery, browser-based PDF resolution, and HTTP downloads
+to be debugged or resumed independently.

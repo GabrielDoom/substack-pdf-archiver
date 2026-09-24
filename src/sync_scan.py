@@ -8,6 +8,7 @@ from gmail_scan import (
 
 from substack_pdf import (
     run_resolution,
+    select_approved_articles
 )
 
 from download_pdfs import (
@@ -303,20 +304,23 @@ def main():
     approved_count = sum(
         1
         for article in all_articles
-        if article.get("status") == "approved"
+        if article.get("status")
+        == "approved"
     )
 
     print()
+
     print(
-        f"[OK] Approved articles waiting: "
+        f"[INFO] PDFs awaiting resolution: "
         f"{approved_count}"
     )
 
     if approved_count == 0:
         print(
-            "[INFO] Nothing to resolve."
+            "[OK] Nothing to resolve."
         )
         return
+
 
     if not ask_yes_no(
         "Resolve approved articles now?",
@@ -328,21 +332,54 @@ def main():
         )
         return
 
+
+    selected_articles = (
+        select_approved_articles(
+            all_articles
+        )
+    )
+
+    if not selected_articles:
+        print(
+            "[INFO] No articles selected. "
+            "Resolution cancelled."
+        )
+        return
+
+
     headless = ask_yes_no(
         "Run Firefox headless?",
         default=True
     )
 
-    run_resolution(
-        headless=headless
+
+    resolved_count = run_resolution(
+        headless=headless,
+        selected_articles=selected_articles
     )
 
+
+    if resolved_count == 0:
+        print(
+            "[INFO] No new PDFs were resolved. "
+            "Download stage skipped."
+        )
+        return
+
+
+    print()
+
+    print(
+        f"[OK] Newly resolved PDFs: "
+        f"{resolved_count}"
+    )
+
+
     if ask_yes_no(
-        "Download resolved PDFs now?",
+        "Download newly resolved PDFs now?",
         default=True
     ):
         run_downloads()
-
 
 if __name__ == "__main__":
     main()
