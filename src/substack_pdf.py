@@ -246,6 +246,47 @@ def ask_headless_mode():
             "Please answer Y or N."
         )
 
+def update_article_status(
+    articles,
+    target_article,
+    status
+):
+    """
+    Updates the matching record in articles.json.
+
+    Gmail message ID is used as the primary identity because it
+    remains stable even when a Substack URL changes.
+    """
+
+    gmail_id = target_article.get(
+        "gmail_id"
+    )
+
+    post_url = target_article.get(
+        "post_url"
+    )
+
+    for article in articles:
+
+        same_gmail_id = (
+            gmail_id
+            and article.get("gmail_id") == gmail_id
+        )
+
+        same_post_url = (
+            post_url
+            and article.get("post_url") == post_url
+        )
+
+        if (
+            same_gmail_id
+            or same_post_url
+        ):
+            article["status"] = status
+            return True
+
+    return False
+
 def create_driver(headless=False):
     """
     Creates Firefox using the dedicated authenticated
@@ -675,7 +716,12 @@ def process_articles(
         )
 
         if post_url in already_resolved:
-            article["status"] = "pdf_resolved"
+
+            update_article_status(
+                articles,
+                article,
+                "pdf_resolved"
+            )
 
             save_json(
                 ARTICLES_FILE,
@@ -684,7 +730,7 @@ def process_articles(
 
             print(
                 f"[SKIP] Already resolved: "
-                f"{post_url}"
+                f"{article.get('title')}"
             )
 
             continue
@@ -705,7 +751,11 @@ def process_articles(
                 results
             )
 
-            article["status"] = "pdf_resolved"
+            update_article_status(
+                articles,
+                article,
+                "pdf_resolved"
+            )
 
             save_json(
                 ARTICLES_FILE,

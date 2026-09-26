@@ -1,13 +1,5 @@
 [
   {
-    "gmail_id": "manual-test-001",
-    "source": "rian-stone",
-    "title": "A loose collection of the Cardinal Rule of Relationships",
-    "post_url": "https://rianstone.substack.com/p/a-loose-collection-of-the-cardinal",
-    "email_date": "2026-09-22",
-    "status": "pdf_resolved"
-  },
-  {
     "gmail_id": "1a0c9cff9d452adc",
     "source": "rian-stone",
     "title": "How many Blow Jobs is too many?",
@@ -184,22 +176,6 @@
     "status": "pdf_resolved"
   },
   {
-    "gmail_id": "19f75c21b0abc972",
-    "source": "corporate-machiavelli",
-    "title": "How Not To Be Average",
-    "post_url": "https://open.substack.com/pub/unmodernmanbot/p/how-not-to-be-average",
-    "email_date": "2026-07-18",
-    "status": "unresolved"
-  },
-  {
-    "gmail_id": "19f6654d87c7a6ee",
-    "source": "corporate-machiavelli",
-    "title": "The Threads That Got Me Banned",
-    "post_url": "https://open.substack.com/pub/unmodernmanbot/p/the-threads-that-got-me-banned",
-    "email_date": "2026-07-15",
-    "status": "unresolved"
-  },
-  {
     "gmail_id": "19f624b4784deb94",
     "source": "rian-stone",
     "title": "Case Study: Double Bitch Management?",
@@ -213,6 +189,33 @@
     "title": "There is no such thing as critical thinking",
     "post_url": "https://open.substack.com/pub/rianstone/p/there-is-no-such-thing-as-critical",
     "email_date": "2026-07-13",
+    "status": "pdf_resolved"
+  },
+  {
+    "gmail_id": "19f75c21b0abc972",
+    "source": "corporate-machiavelli",
+    "article_id": "machiavellibot::how-not-to-be-average",
+    "title": "How Not To Be Average",
+    "post_url": "https://machiavellibot.substack.com/p/how-not-to-be-average",
+    "email_date": "2026-07-18",
+    "status": "pdf_resolved"
+  },
+  {
+    "gmail_id": "19f6654d87c7a6ee",
+    "source": "corporate-machiavelli",
+    "article_id": "machiavellibot::the-threads-that-got-me-banned",
+    "title": "The Threads That Got Me Banned",
+    "post_url": "https://machiavellibot.substack.com/p/the-threads-that-got-me-banned",
+    "email_date": "2026-07-15",
+    "status": "pdf_resolved"
+  },
+  {
+    "gmail_id": "1a0c9eb8ae5421d6",
+    "source": "rian-stone",
+    "article_id": "rianstone::a-loose-collection-of-the-cardinal",
+    "title": "A loose collection of the Cardinal Rule of Relationships",
+    "post_url": "https://rianstone.substack.com/p/a-loose-collection-of-the-cardinal",
+    "email_date": "2026-09-22",
     "status": "pdf_resolved"
   }
 ]

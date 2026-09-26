@@ -4,6 +4,7 @@ import io
 import json
 import re
 import warnings
+import requests
 
 from collections import Counter
 from contextlib import redirect_stdout
@@ -11,7 +12,12 @@ from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 from html.parser import HTMLParser
 from pathlib import Path
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import (
+    parse_qs,
+    urlsplit,
+    urlunsplit,
+    )
+
 import argparse
 
 
@@ -705,12 +711,18 @@ def extract_message_bodies(part):
 
 class LinkExtractor(HTMLParser):
     """
-    Minimal HTML parser that collects href attributes.
+    Extracts hyperlinks together with their visible anchor text.
     """
 
     def __init__(self):
         super().__init__()
+
         self.links = []
+
+        self._inside_anchor = False
+        self._current_href = None
+        self._current_text = []
+
 
     def handle_starttag(
         self,
@@ -720,20 +732,71 @@ class LinkExtractor(HTMLParser):
         if tag.lower() != "a":
             return
 
-        for name, value in attrs:
+        href = None
 
+        for name, value in attrs:
             if (
                 name.lower() == "href"
                 and value
             ):
-                self.links.append(
-                    html.unescape(value)
+                href = html.unescape(
+                    value
                 )
+                break
+
+        if href:
+            self._inside_anchor = True
+            self._current_href = href
+            self._current_text = []
 
 
-def extract_html_links(html_content):
+    def handle_data(
+        self,
+        data
+    ):
+        if self._inside_anchor:
+            self._current_text.append(
+                data
+            )
+
+
+    def handle_endtag(
+        self,
+        tag
+    ):
+        if (
+            tag.lower() == "a"
+            and self._inside_anchor
+        ):
+            text = " ".join(
+                self._current_text
+            )
+
+            text = re.sub(
+                r"\s+",
+                " ",
+                text
+            ).strip()
+
+            self.links.append(
+                {
+                    "href": self._current_href,
+                    "text": html.unescape(
+                        text
+                    )
+                }
+            )
+
+            self._inside_anchor = False
+            self._current_href = None
+            self._current_text = []
+
+
+def extract_html_links(
+    html_content
+):
     """
-    Extracts hyperlinks from HTML email content.
+    Extracts href + visible text from HTML anchors.
     """
 
     parser = LinkExtractor()
@@ -822,25 +885,88 @@ def normalize_post_url(url):
         )
     )
 
-
-def extract_post_url(message):
+def resolve_title_app_link(url):
     """
-    Finds the most likely primary Substack article URL in an email.
-
-    Strategy
-    --------
-    1. Extract every href from HTML.
-    2. Extract raw URLs from plain text as a fallback.
-    3. Normalize Substack post URLs.
-    4. Count duplicate occurrences.
-    5. Select the most frequently referenced post.
-
-    Substack normally links the primary post several times
-    (headline, image, read button), making frequency a useful signal.
+    Resolves Substack's email-title app link into the canonical
+    publication post URL.
 
     Returns
     -------
     str | None
+        Canonical /p/ URL without tracking parameters.
+    """
+
+    if not url:
+        return None
+
+    try:
+        parsed = urlsplit(url)
+    except ValueError:
+        return None
+
+    host = (
+        parsed.hostname
+        or ""
+    ).lower()
+
+    if host != "substack.com":
+        return None
+
+    if parsed.path != "/app-link/post":
+        return None
+
+    query = parse_qs(
+        parsed.query
+    )
+
+    utm_source = query.get(
+        "utm_source",
+        []
+    )
+
+    if "post-email-title" not in utm_source:
+        return None
+
+    try:
+        log_debug(
+            f"Resolving title app-link: {url}"
+        )
+
+        response = requests.get(
+            url,
+            allow_redirects=True,
+            timeout=30
+        )
+
+        response.raise_for_status()
+
+    except requests.RequestException as error:
+        log_debug(
+            f"Failed to resolve title app-link: {error}"
+        )
+        return None
+
+    return normalize_post_url(
+        response.url
+    )
+
+    return normalize_post_url(
+        response.url
+    )
+
+
+def extract_post_url(message):
+    """
+    Finds the primary Substack post URL.
+
+    Selection priority:
+
+    1. A /p/ link whose visible anchor text matches the
+       email subject.
+    2. Remaining valid /p/ links ranked by frequency.
+
+    This avoids preferring generic links such as "Read in App",
+    whose redirects may not reliably preserve the article URL.
     """
 
     bodies = extract_message_bodies(
@@ -850,48 +976,110 @@ def extract_post_url(message):
         )
     )
 
-    candidates = []
+    headers = get_headers(
+        message
+    )
+
+    subject = normalize_title_text(
+        headers.get(
+            "subject",
+            ""
+        )
+    )
 
     for html_body in bodies["html"]:
-        candidates.extend(
-            extract_html_links(
-                html_body
-            )
+
+        links = extract_html_links(
+            html_body
         )
+
+        for link in links:
+
+            href = link.get(
+                "href"
+            )
+
+            title_url = resolve_title_app_link(
+                href
+            )
+
+            if title_url:
+                return title_url
+
+    candidates = []
+    title_candidates = []
+
+    for html_body in bodies["html"]:
+
+        links = extract_html_links(
+            html_body
+        )
+
+        for link in links:
+
+            href = link.get(
+                "href"
+            )
+
+            anchor_text = normalize_title_text(
+                link.get(
+                    "text",
+                    ""
+                )
+            )
+
+            post_url = normalize_post_url(
+                href
+            )
+
+            if not post_url:
+                continue
+
+            candidates.append(
+                post_url
+            )
+
+            if (
+                subject
+                and anchor_text == subject
+            ):
+                title_candidates.append(
+                    post_url
+                )
+
+    # Highest-priority source:
+    # the article title itself.
+
+    if title_candidates:
+        return title_candidates[0]
+
+    # Plain-text URLs remain available as fallback.
 
     url_pattern = re.compile(
         r'https?://[^\s<>"\']+'
     )
 
     for plain_body in bodies["plain"]:
-        candidates.extend(
-            url_pattern.findall(
-                plain_body
-            )
-        )
 
-    normalized = []
+        for candidate in url_pattern.findall(
+            plain_body
+        ):
 
-    for candidate in candidates:
-
-        post_url = normalize_post_url(
-            candidate
-        )
-
-        if post_url:
-            normalized.append(
-                post_url
+            post_url = normalize_post_url(
+                candidate
             )
 
-    if not normalized:
+            if post_url:
+                candidates.append(
+                    post_url
+                )
+
+    if not candidates:
         return None
 
     counts = Counter(
-        normalized
+        candidates
     )
-
-    # Python Counter preserves insertion order for ties,
-    # so the earliest equally frequent URL wins.
 
     return counts.most_common(
         1
@@ -1000,6 +1188,23 @@ def clean_subject(subject):
     ).strip()
 
 
+def normalize_title_text(text):
+    """
+    Normalizes article titles for link-text comparison.
+    """
+
+    text = html.unescape(
+        text or ""
+    )
+
+    text = re.sub(
+        r"\s+",
+        " ",
+        text
+    )
+
+    return text.strip().lower()
+
 def build_article_record(
     message,
     source,
@@ -1069,16 +1274,32 @@ def merge_articles(
 
     return results, new_count
 
+import subprocess
+
+def notify_new_articles(new_count):
+    if new_count <= 0:
+        return
+
+    subprocess.run(
+        [
+            "notify-send",
+            "Substack PDF Archiver",
+            f"{new_count} new article(s) found. "
+            "Run sync_scan.py to review them."
+        ],
+        check=False
+    )
 
 # ---------------------------------------------------------
 # Main scanning operation
 # ---------------------------------------------------------
 
 def scan_gmail(
-    service, 
+    service,
     sources,
     query,
-    cutoff=None
+    cutoff=None,
+    existing_gmail_ids=None
     ):
     """
     Executes the Gmail discovery stage.
@@ -1089,6 +1310,9 @@ def scan_gmail(
         Newly discovered article records before merging with
         existing state.
     """
+
+    if existing_gmail_ids is None:
+        existing_gmail_ids = set()
 
     message_ids = search_messages(
         service,
@@ -1111,6 +1335,11 @@ def scan_gmail(
         message_ids,
         start=1
     ):
+        if message_id in existing_gmail_ids:
+            log_debug(
+                f"Already tracked: {message_id}"
+            )
+            continue
 
         try:
             message = get_message(
@@ -1295,6 +1524,12 @@ def run_scan(scheduled=False):
         if article_identity(article)
     }
 
+    existing_gmail_ids = {
+        article.get("gmail_id")
+        for article in existing_articles
+        if article.get("gmail_id")
+    }    
+
     service = authenticate_gmail()
 
     if scheduled:
@@ -1328,7 +1563,8 @@ def run_scan(scheduled=False):
         service,
         sources,
         query=query,
-        cutoff=cutoff
+        cutoff=cutoff,
+        existing_gmail_ids=existing_gmail_ids
     )
 
     newly_discovered = [
@@ -1350,6 +1586,7 @@ def run_scan(scheduled=False):
 
     if scheduled:
         save_scan_state()
+        notify_new_articles(new_count)
 
     print()
 

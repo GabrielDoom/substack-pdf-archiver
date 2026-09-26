@@ -28,8 +28,6 @@ No browser automation is performed in this stage.
 
 ### 2. Substack PDF Resolver
 
-### 2. Substack PDF Resolver
-
 `src/substack_pdf.py`
 
 Reads the article URLs stored by the Gmail scanner.

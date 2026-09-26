@@ -1,19 +1,11 @@
 [
   {
-    "gmail_id": "19fd1ef0158fda43",
-    "source": "corporate-machiavelli",
-    "title": "Naïveté is not virtue",
-    "post_url": "https://open.substack.com/pub/corporatemachiavelli/p/naivete-is-not-virtue",
-    "email_date": "2026-08-05",
-    "status": "approved"
-  },
-  {
     "gmail_id": "manual-test-001",
     "source": "rian-stone",
     "title": "A loose collection of the Cardinal Rule of Relationships",
     "post_url": "https://rianstone.substack.com/p/a-loose-collection-of-the-cardinal",
     "email_date": "2026-09-22",
-    "status": "pdf_resolved",
+    "status": "downloaded",
     "pdf_url": "https://rianstone.substack.com/api/v1/post/pdf?postId=216928353",
     "pdf_title": "Rian’s Substack - A loose collection of the Cardinal Rule of Relationships.pdf",
     "local_path": "downloads/rian-stone/Rian’s Substack - A loose collection of the Cardinal Rule of Relationships.pdf",
@@ -25,10 +17,36 @@
     "title": "How many Blow Jobs is too many?",
     "post_url": "https://open.substack.com/pub/rianstone/p/how-many-blow-jobs-is-too-many",
     "email_date": "2026-09-22",
-    "status": "pdf_resolved",
+    "status": "downloaded",
     "pdf_url": "https://rianstone.substack.com/api/v1/post/pdf?postId=216923288",
     "pdf_title": "Rian’s Substack - How many Blow Jobs is too many?.pdf",
     "local_path": "downloads/rian-stone/Rian’s Substack - How many Blow Jobs is too many_.pdf",
     "downloaded_size": 348190
+  },
+  {
+    "gmail_id": "19f6654d87c7a6ee",
+    "source": "corporate-machiavelli",
+    "article_id": "machiavellibot::the-threads-that-got-me-banned",
+    "title": "The Threads That Got Me Banned",
+    "post_url": "https://machiavellibot.substack.com/p/the-threads-that-got-me-banned",
+    "email_date": "2026-07-15",
+    "status": "downloaded",
+    "pdf_url": "https://machiavellibot.substack.com/api/v1/post/pdf?postId=207139074",
+    "pdf_title": "Machiavelli Bot - The Threads That Got Me Banned.pdf",
+    "local_path": "downloads/corporate-machiavelli/Machiavelli Bot - The Threads That Got Me Banned.pdf",
+    "downloaded_size": 49981
+  },
+  {
+    "gmail_id": "19f75c21b0abc972",
+    "source": "corporate-machiavelli",
+    "article_id": "machiavellibot::how-not-to-be-average",
+    "title": "How Not To Be Average",
+    "post_url": "https://machiavellibot.substack.com/p/how-not-to-be-average",
+    "email_date": "2026-07-18",
+    "status": "downloaded",
+    "pdf_url": "https://machiavellibot.substack.com/api/v1/post/pdf?postId=207554155",
+    "pdf_title": "Machiavelli Bot - How Not To Be Average .pdf",
+    "local_path": "downloads/corporate-machiavelli/Machiavelli Bot - How Not To Be Average .pdf",
+    "downloaded_size": 56746
   }
 ]
